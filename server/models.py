@@ -13,48 +13,70 @@ convention = {
 }
 
 metadata = MetaData(naming_convention=convention)
-
 db = SQLAlchemy(metadata=metadata)
-
 
 class Planet(db.Model, SerializerMixin):
     __tablename__ = 'planets'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
-    distance_from_earth = db.Column(db.Integer)
-    nearest_star = db.Column(db.String)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=False)
 
-    # Add relationship
+    missions = db.relationship('Mission', back_populates='planet', cascade='all, delete-orphan')
+    scientists = association_proxy('missions', 'scientist')
 
-    # Add serialization rules
+    serialize_rules = ('-missions.planet',)
 
+    def __repr__(self):
+        return f'<Planet {self.id}: {self.name}>'
 
 class Scientist(db.Model, SerializerMixin):
     __tablename__ = 'scientists'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
-    field_of_study = db.Column(db.String)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    field_of_study = db.Column(db.String(100), nullable=False)
 
-    # Add relationship
+    missions = db.relationship('Mission', back_populates='scientist', cascade='all, delete-orphan')
+    planets = association_proxy('missions', 'planet')
 
-    # Add serialization rules
+    serialize_rules = ('-missions.scientist',)
 
-    # Add validation
+    @validates('name', 'field_of_study')
+    def validate_not_empty(self, key, value):
+        if not value or value.strip() == '':
+            raise ValueError(f'{key} cannot be empty')
+        return value
 
+    def __repr__(self):
+        return f'<Scientist {self.id}: {self.name}>'
 
 class Mission(db.Model, SerializerMixin):
     __tablename__ = 'missions'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
+    planet_id = db.Column(db.Integer, db.ForeignKey('planets.id'), nullable=False)
+    scientist_id = db.Column(db.Integer, db.ForeignKey('scientists.id'), nullable=False)
+    mission_date = db.Column(db.Date, nullable=False)
+    duration_days = db.Column(db.Integer, nullable=False)
 
-    # Add relationships
+    planet = db.relationship('Planet', back_populates='missions')
+    scientist = db.relationship('Scientist', back_populates='missions')
 
-    # Add serialization rules
+    serialize_rules = ('-planet.missions', '-scientist.missions')
 
-    # Add validation
+    @validates('duration_days')
+    def validate_duration(self, key, value):
+        if value <= 0:
+            raise ValueError('Mission duration must be positive')
+        return value
 
+    @validates('mission_date')
+    def validate_mission_date(self, key, value):
+        from datetime import date
+        if value < date.today():
+            raise ValueError('Mission date must be in the future')
+        return value
 
-# add any models you may need.
+    def __repr__(self):
+        return f'<Mission {self.id}: {self.scientist.name} to {self.planet.name}>'
